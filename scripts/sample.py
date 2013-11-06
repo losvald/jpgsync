@@ -103,12 +103,12 @@ if __name__ == '__main__':
 		action="store_true"
 	)
 	parser.add_argument('-i', '--input-file', help="set input file",
-						type=argparse.FileType('r'))
+						type=argparse.FileType('r'), default='-')
 	po = parser.parse_args()
 
 	sha1_path = {}
 	with open(os.devnull, 'w') as dev_null:
-		for path in sys.stdin:
+		for path in po.input_file:
 			path = path.strip()
 			if not path:
 				continue
