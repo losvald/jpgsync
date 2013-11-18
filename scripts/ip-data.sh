@@ -35,19 +35,20 @@ trap 'cleanup' EXIT
 
 # run tshark and capture IP data to/from host into $out
 out=$(mktemp --suffix .ipdata.$ip)
-tshark_cmd="tshark $ifaces -q -z conv,ip host $ip > '$out' 2>/tmp/tshark.err &"
+tshark_cmd="tshark $ifaces -q -z conv,ip host $ip > '$out' 2>/dev/null &"
 run $tshark_cmd
 tshark_pid=$(pgrep -n tshark)
 
-# run program and dump time stats to stdout in a single line
-run /usr/bin/time -p -f "'%e %U %S'" -o /dev/stdout "$@"
+# run program and dump time stats to stdout in a single line,
+# redirecting program's stderr to stdout along with time stats
+( run /usr/bin/time -p -f "'%e %U %S'" -a "$@" >/dev/null ) 2>&1
 kill -SIGINT $tshark_pid # this doesn't kill it if no packets are captured
 # wait until the output is written to the file
 timeout=0.1
 while [ ! -s "$out" ]; do
     sleep $timeout
     timeout=$(echo $timeout '* 2' | bc -l)
-    if (( $(echo "$timeout > 0.5" | bc -l) == 1 )); then
+    if (( $(echo "$timeout > 1.5" | bc -l) == 1 )); then
 	echo "No traffic captured due to timeout"
 	exit 3
     fi

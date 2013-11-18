@@ -19,12 +19,27 @@ class Host(object):
 		remote, sep, dir_path = directory.partition(':')
 		if not sep:
 			host = Host()
-			host.__dict__.update(dir_path=remote, sha1_path=sha1_path)
+			host.__dict__.update(
+				dir_path=remote, remote="", sha1_path=sha1_path
+			)
 		else:
 			host = RemoteHost()
-			host.__dict__.update(dir_path=dir_path, remote=remote,
-								 sha1_path=sha1_path)
+			host.__dict__.update(
+				dir_path=dir_path, remote=remote, sha1_path=sha1_path
+			)
 		return host
+
+	@property
+	def unison_clean_cmd(self):
+		return [
+			"bash", "-c",
+			("find ~/.unison/ | { egrep /..[0-9a-f]{32}$ || true; }"
+			 " | xargs rm -f")
+		]
+
+	@property
+	def unison_root(self):
+		return self.dir_path
 
 	@property
 	def mkdir_cmd(self):
@@ -53,6 +68,17 @@ class RemoteHost(Host):
 		return ["ssh", self.remote, ' '.join(cmd)]
 
 	@property
+	def unison_clean_cmd(self):
+		return self.to_ssh_cmd(super(RemoteHost, self).unison_clean_cmd)
+
+	@property
+	def unison_root(self):
+		return "ssh://%s/%s" % (
+			self.remote,
+			super(RemoteHost, self).unison_root
+		)
+
+	@property
 	def mkdir_cmd(self):
 		return self.to_ssh_cmd(super(RemoteHost, self).mkdir_cmd)
 
@@ -73,6 +99,7 @@ class RemoteHost(Host):
 		return subprocess.check_output(
 			["ssh", self.remote, ls_cmd],
 		).strip().split()
+
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
@@ -104,6 +131,37 @@ if __name__ == '__main__':
 	)
 	parser.add_argument('-i', '--input-file', help="set input file",
 						type=argparse.FileType('r'), default='-')
+	po_run_group = parser.add_mutually_exclusive_group()
+
+	po_run_group.add_argument(
+		'--unison', help="run unison", action="store_true"
+	)
+	parser.add_argument(
+		'--unison-clean', help="clear unison archives",
+		action="store_true"
+	)
+	parser.add_argument(
+		'--unison-cmd', help="path to unison executable",
+		default="unison"
+	)
+	parser.add_argument(
+		'--unison-remote-cmd', help="path to unison executable on remote host",
+		default='bin/unison'
+	)
+
+	po_run_group.add_argument(
+		'--jpgsync', help="run jpgsync", action="store_true"
+	)
+	parser.add_argument(
+		'--jpgsync-cmd', help="path to jpgsync executable",
+		default="jpgsync"
+	)
+	parser.add_argument(
+		'--jpgsync-remote-cmd',
+		help="path to jpgsync executable on remote host",
+		default='bin/jpgsync'
+	)
+
 	po = parser.parse_args()
 
 	sha1_path = {}
@@ -130,12 +188,14 @@ if __name__ == '__main__':
 			parser.exit(1, "Size of sample symmetric difference too big\n")
 
 	random.seed(po.seed)
+	roots = []
+	capture_ip = ""
 
 	with open(os.devnull, 'w') as dev_null:
-		def execute_cmd(args):
-			print ' '.join(map(repr, args))
+		def execute_cmd(args, stdout=dev_null, stderr=None):
+			print >> sys.stderr, ' '.join(map(repr, args))
 			if not po.dry_run:
-				subprocess.check_call(args, stdout=dev_null)
+				subprocess.check_call(args, stdout=stdout, stderr=stderr)
 
 		for dir_path, s_sha1s in zip(
 			(po.dir1, po.dir2),
@@ -158,3 +218,27 @@ if __name__ == '__main__':
 			# sanity check
 			if not po.dry_run:
 				assert sorted(host.get_sha1_basenames()) == sorted(s_sha1s)
+
+			if po.unison_clean:
+				execute_cmd(host.unison_clean_cmd)
+
+			roots.append(host.unison_root)
+			capture_ip = capture_ip or host.remote
+
+		if po.jpgsync or po.unison:
+			cmd = [
+				os.path.join(
+					os.path.dirname(os.path.realpath(sys.argv[0])),
+					"ip-data.sh",
+				),
+				capture_ip or "localhost",
+			]
+			if po.unison:
+				cmd += [
+					po.unison_cmd, "-servercmd", po.unison_remote_cmd,
+					"-batch", "-ignorearchives",
+				]
+			else:
+				raise NotImplementedError("jpgsync not implemented")
+			cmd += roots
+			execute_cmd(cmd, None, dev_null)
