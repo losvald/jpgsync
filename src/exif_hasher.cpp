@@ -12,6 +12,7 @@
 
 #include <thread>
 #include <unordered_set>
+#include <utility>
 
 ExifHasher::Entry::Entry() : next(NULL) {}
 ExifHasher::Entry::Entry(const ExifHash* hash, const std::string& path)
@@ -24,6 +25,14 @@ ExifHasher::ExifHasher()
       new_entry_(tail_),
       new_entry_count_(0),
       done_(false) {}
+
+ExifHasher::~ExifHasher() {
+  auto cur = dummy_entry_.next;
+  for (decltype(cur) next; cur != NULL; cur = next) {
+    next = cur->next;
+    delete cur;
+  }
+}
 
 bool ExifHasher::HashExif(const std::string& path,
                           unsigned char* sha1_hash) const {
@@ -88,10 +97,10 @@ void ExifHasher::Run(size_t progress_threshold, std::istream* input) {
         if (hashes.size() % progress_threshold == 0) {
           std::unique_lock<decltype(mutex_)> locker(mutex_);
           new_entry_count_ += progress_threshold;
-          DEBUG_OUT_LN(RUN, "NOTIFY(%lu)", (unsigned long)new_entry_count_);
+          DEBUG_OUT_LN(RUN, "NOTIFY(%s)", DEBUG_STR(new_entry_count_));
           new_entries_.notify_one();
         }
-        DEBUG_OUT_LN(RUN, "sha1=%s; path=", tail_->hash->c_str(),
+        DEBUG_OUT_LN(RUN, "sha1=%s; path=%s", DEBUG_STR(tail_->hash),
                      path.c_str());
       }
 
@@ -100,7 +109,7 @@ void ExifHasher::Run(size_t progress_threshold, std::istream* input) {
         new_entry_count_ += hashes.size() % progress_threshold;
         done_ = true;
         DEBUG_OUT_LN(RUN, "DONE");
-        DEBUG_OUT_LN(RUN, "NOTIFY(%lu)", (unsigned long)new_entry_count_);
+        DEBUG_OUT_LN(RUN, "NOTIFY(%s)", DEBUG_STR(new_entry_count_));
         new_entries_.notify_one();
       }
     });
@@ -110,21 +119,18 @@ void ExifHasher::Run(size_t progress_threshold, std::istream* input) {
 const ExifHasher::Entry* ExifHasher::Get(size_t* count) {
   {
     std::unique_lock<decltype(mutex_)> locker(mutex_);
-    DEBUG_OUT_LN(GET, "WAIT BEGIN(%lu)", (unsigned long)*count);
+    DEBUG_OUT_LN(GET, "WAIT BEGIN(%s)", DEBUG_STR(*count));
     new_entries_.wait(locker, [this, &count] {
         return new_entry_count_ >= *count || done_;
       });
     *count = std::min(*count, new_entry_count_);
-    DEBUG_OUT_LN(GET, "WAIT END(%lu / %lu)", (unsigned long)*count,
-                 (unsigned long)new_entry_count_);
+    DEBUG_OUT_LN(GET, "WAIT END(%s / %s)", DEBUG_STR(*count),
+                 DEBUG_STR(new_entry_count_));
     new_entry_count_ -= *count;
   }
 
   auto begin = new_entry_->next;
-  for (auto i = 0; i < *count; ++i)
+  for (size_t i = 0; i < *count; ++i)
     new_entry_ = new_entry_->next;
   return begin;
 }
-
-// ExifHasher::~ExifHasher() {
-// }

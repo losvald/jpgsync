@@ -7,23 +7,22 @@
 #include <iostream>
 #include <mutex>
 #include <string>
-#include <utility>
 
 class ExifHasher {
  public:
   struct Entry {
+    Entry* next;
     const ExifHash* hash;
     std::string path;
-    Entry* next;
-    // std::atomic<Entry*> next;
+
     Entry();
     Entry(const ExifHash* hash, const std::string& path);
   };
 
   ExifHasher();
-  // virtual ~ExifHasher();
-  void Run(size_t progress_threshold, std::istream* input);
+  virtual ~ExifHasher();
 
+  void Run(size_t progress_threshold, std::istream* input);
   const Entry* Get(size_t* count);
 
  protected:
