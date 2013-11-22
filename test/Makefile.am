@@ -9,5 +9,8 @@ exifprint_mmap_LDADD = -lexiv2 #-lcrypto
 sha1print_SOURCES = sha1print.cpp
 sha1print_LDADD = -lcrypto
 
-unittest_all_SOURCES = test.cpp comm_unittest.cpp
-unittest_all_LDADD = -lgtest -lpthread
+unittest_all_SOURCES = test.cpp \
+	exif_hash_unittest.cpp ../src/exif_hash.cpp \
+	../src/util/fd.cpp ../src/util/syscall.cpp
+unittest_all_LDADD = -lgtest -lcrypto -lexiv2
+unittest_all_LDFLAGS = -pthread

@@ -1,6 +1,6 @@
 #include <unordered_set>
 
-#include "../src/comm.hpp"
+#include "../src/exif_hash.hpp"
 
 #include "test.hpp"
 
