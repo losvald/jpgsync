@@ -1,0 +1,1 @@
+for ((i=0; i<50000; ++i)); do dd if=/dev/urandom of=foo bs=20 count=1 2>/dev/null; mv foo $(sha1sum foo | awk '{print $1}'); done
