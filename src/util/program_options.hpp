@@ -89,9 +89,9 @@ class ProgramOptions {
     for (int from = 1, to; from < *argc; ) {
       char* flag = argv[from++];
       if (!moreflags || flag[0] != '-') {
-#ifdef DEBUG
-        std::cerr << "(parsed arg: " << flag << ")\n";
-#endif
+// #ifdef DEBUG
+//         std::cerr << "(parsed option value: " << flag << ")\n";
+// #endif
         arg_inds.push_back(from - 1);
         continue;
       }
@@ -136,6 +136,9 @@ class ProgramOptions {
     // update argc and argv
     std::vector<int>::const_iterator arg_ind = arg_inds.begin();
     for (int i = 1; i <= static_cast<int>(arg_inds.size()); ++i) {
+#ifdef DEBUG
+      std::cerr << "(parsed arg: " << argv[*arg_ind] << ")" << std::endl;
+#endif
       char* tmp = argv[i];
       argv[i] = argv[*arg_ind];
       argv[*arg_ind] = tmp;
