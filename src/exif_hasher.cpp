@@ -75,13 +75,14 @@ bool ExifHasher::HashExif(const std::string& path,
   return false;
 }
 
-void ExifHasher::Run(size_t progress_threshold, std::istream* input) {
-  std::thread thr([this, input, progress_threshold] {
+void ExifHasher::Run(size_t progress_threshold,
+                     std::function<const char*(void)> path_gen) {
+  std::thread thr([this, path_gen, progress_threshold] {
       std::unordered_set<ExifHash> hashes;
       unsigned char hash_buf[SHA_DIGEST_LENGTH];
       std::string path;
       DEBUG_OUT_LN(RUN, "BEGIN");
-      while ((*input >> path)) {
+      while (!path.replace(0, std::string::npos, path_gen()).empty()) {
         DEBUG_OUT_LN(RUN, "path=%s | PROCESSING", path.c_str());
         if (!HashExif(path, hash_buf))
           continue;

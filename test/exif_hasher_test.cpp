@@ -3,6 +3,11 @@
 #include <cstring>
 #include <fstream>
 
+struct PathIterator {
+  PathIterator() {
+  }
+};
+
 int main(int argc, char* argv[]) {
   using namespace std;
   istream* is;
@@ -11,7 +16,8 @@ int main(int argc, char* argv[]) {
   is = (strcmp(input_file, "-") == 0 ? &cin : new fstream(input_file));
 
   ExifHasher exif_hasher;
-  exif_hasher.Run(1, is);
+  std::string s;
+  exif_hasher.Run(1, [&] { return (*is >> s) ? s.c_str() : ""; });
 
   size_t count;
   do {

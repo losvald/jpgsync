@@ -4,6 +4,7 @@
 #include "exif_hash.hpp"
 
 #include <condition_variable>
+#include <functional>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -22,7 +23,8 @@ class ExifHasher {
   ExifHasher();
   virtual ~ExifHasher();
 
-  void Run(size_t progress_threshold, std::istream* input);
+  void Run(size_t progress_threshold,
+           std::function<const char*(void)> path_gen);
   const Entry* Get(size_t* count);
 
  protected:
