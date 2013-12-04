@@ -24,7 +24,7 @@ struct ConnectionConstants {
 
   static size_t ReadFully(int fd, void* buf, size_t count) {
     ssize_t read_count = 0;
-    char* bytes = buf;
+    auto bytes = static_cast<char*>(buf);
     do {
       ssize_t ret;
       sys_call_rv(ret, read, fd, bytes + read_count, count - read_count);
@@ -35,7 +35,7 @@ struct ConnectionConstants {
 
   static size_t WriteFully(int fd, const void* buf, size_t count) {
       ssize_t write_count = 0;
-      const char* bytes = buf;
+      auto bytes = static_cast<const char*>(buf);
       do {
         ssize_t ret;
         sys_call_rv(ret, write, fd, bytes + write_count, count - write_count);

@@ -72,7 +72,8 @@ void Peer::Sync(const std::string& root) {
               e->hash->ToDigest(bytes -= sizeof(ExifHash));
               e = e->next;
             } while (bytes != buf);
-            sys_call(write, update_fd, buf, write_count);
+            ConnectionConstants<kUpdateProto>::
+                WriteFully(update_fd, buf, write_count);
             if (logger_->verbosity() > 1) {
               for (auto e = e_first; hash_count--; e = e->next)
                 logger_->Verbose("sent hash:" + ToString(*e->hash), 2);
@@ -107,11 +108,11 @@ void Peer::Sync(const std::string& root) {
             InitUpdateConnection(upload_fd_, &update_fd);
           }
 
-          unsigned char buf[ConnectionConstants<kSyncProto>::
+          unsigned char buf[ConnectionConstants<kUpdateProto>::
                             hashes_per_packet * sizeof(ExifHash)];
           while (true) {
-            ssize_t read_count;
-            sys_call_rv(read_count, read, update_fd, buf, sizeof(buf));
+            ssize_t read_count = ConnectionConstants<kUpdateProto>::
+                ReadFully(update_fd, buf, sizeof(buf));
             if (!read_count) {
               logger_->Verbose("received end of update");
               break;
