@@ -44,11 +44,6 @@ uint16_t Master::Listen() {
   return BindAndListen(sync_sock_, sync_port_);
 }
 
-void Master::Sync(const std::string& root) {
-
-  Peer::Sync(root);
-}
-
 void Master::InitUpdateConnection(int sync_fd, FD* update_fd) {
   if (update_sock_.closed())
     return ;

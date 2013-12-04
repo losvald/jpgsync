@@ -11,8 +11,6 @@ class Master : public Peer {
  public:
   Master(Logger* logger);
   uint16_t Listen();
-  void Sync(const std::string& root);
-
   void set_port(uint16_t port);
  protected:
   void InitUpdateConnection(int sync_fd, FD* update_fd);

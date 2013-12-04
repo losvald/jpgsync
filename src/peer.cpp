@@ -16,12 +16,12 @@
 #include <thread>
 #include <unordered_set>
 
-const int Peer::kSyncProto = IPPROTO_TCP;
+const int Peer::kSyncProto = SOCK_STREAM;
 const int Peer::kUpdateProto =
-#ifdef TCP_UPDATE
-    IPPROTO_TCP
+#ifdef RELIABLE_UPDATE
+    SOCK_STREAM
 #else
-    IPPROTO_DCCP
+    SOCK_DGRAM
 #endif
     ;
 
@@ -147,7 +147,7 @@ void Peer::Sync(const std::string& root) {
 
       InitUploadConnection();
 
-      // wait until the sender notifies it has sent all hashes
+      // wait until the sender notifies that it has sent all hashes
       char byte;
       ssize_t read_count;
       sys_call_rv(read_count, read, upload_fd_, &byte, 1);
@@ -176,5 +176,5 @@ void Peer::Download() {
 
 void Peer::Upload() {
   // TODO
-}
 
+}

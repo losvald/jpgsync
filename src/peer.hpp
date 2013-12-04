@@ -10,20 +10,20 @@ class Logger;
 class Peer {
  public:
   Peer(Logger* logger);
-  virtual void Download();
-  virtual void Upload();
   void Sync(const std::string& root);
 
  protected:
-
   static const int kSyncProto;
   static const int kUpdateProto;
 
   virtual int InitUpdateConnectionSocket(FD* fd);
   virtual void InitUpdateConnection(int sync_fd, FD* fd) = 0;
+
   virtual int InitSyncConnectionSocket(FD* fd);
   virtual void InitDownloadConnection() = 0;
   virtual void InitUploadConnection() = 0;
+  void Download();
+  void Upload();
 
   Logger* logger_;
   FD download_fd_;
