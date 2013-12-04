@@ -37,6 +37,8 @@ struct ExifHash {
 
   friend std::ostream& operator<<(std::ostream& os, const ExifHash& eh);
 
+  void ToDigest(void* bytes) const;
+
  private:
   uint32_t word0;
   uint32_t word1;

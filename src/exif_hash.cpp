@@ -1,5 +1,17 @@
 #include "exif_hash.hpp"
 
+#include <arpa/inet.h>
+#include <cstring>
+
+namespace {
+
+inline void ToNetworkOrderByte(uint32_t word, void* byte) {
+  word = htonl(word);
+  memcpy(byte, &word, sizeof(uint32_t));
+}
+
+} // namespace
+
 ExifHash::ExifHash() {}
 
 ExifHash::ExifHash(const unsigned char* sha1_digest)
@@ -17,6 +29,15 @@ std::ostream& operator<<(std::ostream& os, const ExifHash& eh) {
       std::setw(8) << eh.word3 <<
       std::setw(8) << eh.word4;
   return os;
+}
+
+void ExifHash::ToDigest(void* bytes) const {
+  auto sha1_digest = static_cast<unsigned char*>(bytes);
+  ToNetworkOrderByte(word0, sha1_digest + 0);
+  ToNetworkOrderByte(word1, sha1_digest + 4);
+  ToNetworkOrderByte(word2, sha1_digest + 8);
+  ToNetworkOrderByte(word3, sha1_digest + 12);
+  ToNetworkOrderByte(word4, sha1_digest + 16);
 }
 
 namespace std {

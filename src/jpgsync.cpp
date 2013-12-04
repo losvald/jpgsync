@@ -1,4 +1,7 @@
+#include "master.hpp"
+#include "slave.hpp"
 #include "util/fd.hpp"
+#include "util/logger.hpp"
 #include "util/program_options.hpp"
 #include "util/string_utils.hpp"
 #include "util/syscall.hpp"
@@ -384,9 +387,21 @@ int main(int argc, char** argv) {
     return exit_status;
   }
 
-  // TODO
-  cerr << "Not implemented" << endl;
-  return 1;
+  Logger logger(PROG, gPO.verbosity());
+
+  try {
+    if (gPO.master.count()) {
+      Master master(&logger);
+      cout << "Listening on port " << master.Listen() << endl;
+      master.Sync(gPO.master_root().dir);
+    } else {
+      Slave slave(gPO.master_host(), gPO.master_port(), &logger);
+      slave.Sync(gPO.slave_root().dir);
+    }
+  } catch (const SysCallException& e) {
+    CERR << "fatal: " << e.what() << endl;
+    exit_status = 1;
+  }
 
   return exit_status;
 }
