@@ -9,70 +9,44 @@
 #include "util/string_utils.hpp"
 #include "util/syscall.hpp"
 
-#include <arpa/inet.h>
-
 #include <atomic>
+#include <fstream>
 #include <thread>
 #include <unordered_set>
 #include <vector>
 
 namespace {
 
-template<typename T>
-bool ReadByte(int fd, T* integral) {
-  unsigned char byte;
-  bool ret = ReadByte<unsigned char>(fd, &byte);
-  *integral = byte;
-  return ret;
-}
-
-template<>
-inline bool ReadByte<unsigned char>(int fd, unsigned char* byte) {
-  ssize_t read_count;
-  sys_call_rv(read_count, read, fd, byte, 1);
-  return read_count;
-}
-
-template<typename T>
-inline bool WriteByte(int fd, T integral) {
-  unsigned char byte = integral;
-  ssize_t write_count;
-  sys_call_rv(write_count, write, fd, &byte, 1);
-  return write_count;
+template<class Stream>
+bool Reopen(const char* filename, Stream* stream) {
+  stream->close();
+  stream->clear();
+  stream->open(filename);
+  return stream->is_open();
 }
 
 } // namespace
 
 Peer::Peer(Logger* logger) : logger_(logger) {}
-
-void Peer::InitSyncConnectionSocket(FD* fd) {
-  *fd = SyncProtocol::InitSocket();
-}
-
-void Peer::InitUpdateConnectionSocket(FD* fd) {
-  *fd = UpdateProtocol::InitSocket();
-}
+Peer::~Peer() {}
 
 void Peer::Sync(PathGenerator path_gen) {
   ExifHasher exif_hasher;
   exif_hasher.Run(UpdateProtocol::hashes_per_packet,
                   path_gen);
 
-  std::mutex init_update_mutex;
-  FD update_fd;
-  FD download_fd;
-  FD upload_fd;
-
-  CreateConnections(&download_fd, &upload_fd);
+  uint16_t update_port = 0;
+  std::atomic_flag update_init = ATOMIC_FLAG_INIT;
 
   std::thread downloader([&] {
-      std::unordered_set<ExifHash> found_hashes;
+      FD download_fd;
+      InitSyncConnection(&download_fd, &update_port);
 
+      std::unordered_set<ExifHash> found_hashes;
       std::thread update_sender([&] {
-          {
-            std::unique_lock<std::mutex> locker(init_update_mutex);
-            InitUpdateConnection(download_fd, &update_fd);
-          }
+          FD update_fd;
+          if (!update_init.test_and_set())
+            InitUpdateConnection(update_port, &update_fd);
 
           unsigned char buf[UpdateProtocol::
                             hashes_per_packet * sizeof(ExifHash)];
@@ -100,21 +74,21 @@ void Peer::Sync(PathGenerator path_gen) {
           }
         });
 
-      InitDownloadConnection(&download_fd);
-
       // wait until all hashes are sent and notify the receiver
       update_sender.join();
 
       unsigned char byte;
-      WriteByte(download_fd, byte);
+      SyncProtocol::WriteByte(download_fd, byte);
 
       logger_->Verbose("started downloading");
+      std::ofstream ofs;
 
       std::vector<ExifHash> missing_hashes;
       unsigned char buf[SyncProtocol::
                         hashes_per_packet * sizeof(ExifHash)];
 
-      for (size_t hash_count; ReadByte(download_fd, &hash_count); ) {
+      for (size_t hash_count; SyncProtocol::
+               ReadByte(download_fd, &hash_count); ) {
         if (hash_count > SyncProtocol::hashes_per_packet) {
           logger_->Error("sync received invalid offer hash count: " +
                         ToString(hash_count));
@@ -147,23 +121,42 @@ void Peer::Sync(PathGenerator path_gen) {
           }
         } while (bytes != buf);
 
-        for (const auto& hash : missing_hashes)
-          Download(hash, &download_fd);
+        for (const auto& hash : missing_hashes) {
+          char filename[0xFF + 1];
+          unsigned char filename_len;
+          if (!SyncProtocol::ReadByte(download_fd, &filename_len) ||
+              !SyncProtocol::ReadExactly(download_fd, filename, filename_len)){
+            logger_->Error("missing filename for: " + ToString(hash));
+            continue;
+          }
+          filename[filename_len] = 0;
+
+          // create filename <filename> or <filename>-<sha1> (if former exists)
+          if (!(Reopen(filename, &ofs) ||
+                Reopen((filename + ("-" + ToString(hash))).c_str(), &ofs))) {
+              logger_->Error("filename conflict resolution failed for: " +
+                             ToString(hash));
+          }
+          // and download
+          Download(&download_fd, &ofs);
+        }
       }
       download_fd.Close();
       logger_->Verbose("finished downloading");
     });
 
   std::thread uploader([&] {
-      std::unordered_set<ExifHash> received_hashes;
+      FD upload_fd;
+      InitSyncConnection(&upload_fd, &update_port);
 
       bool updated = false;
       std::mutex updated_mutex;
+
+      std::unordered_set<ExifHash> received_hashes;
       std::thread update_receiver([&] {
-          {
-            std::unique_lock<std::mutex> locker(init_update_mutex);
-            InitUpdateConnection(upload_fd, &update_fd);
-          }
+          FD update_fd;
+          if (!update_init.test_and_set())
+            InitUpdateConnection(update_port, &update_fd);
 
           unsigned char buf[UpdateProtocol::
                             hashes_per_packet * sizeof(ExifHash)];
@@ -203,8 +196,6 @@ void Peer::Sync(PathGenerator path_gen) {
         });
       update_receiver.detach();
 
-      InitUploadConnection(&upload_fd);
-
       // wait until the sender notifies that it has sent all hashes
       char byte;
       ssize_t read_count;
@@ -227,6 +218,10 @@ void Peer::Sync(PathGenerator path_gen) {
 
   downloader.join();
   uploader.join();
+}
+
+void Peer::Download(FD* fd, std::ofstream* ofs) {
+  // TODO
 }
 
 // void Peer::Upload() {

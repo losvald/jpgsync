@@ -1,5 +1,7 @@
 #include "master.hpp"
 
+#include "connection_constants.hpp"
+#include "util/logger.hpp"
 #include "util/syscall.hpp"
 
 #include <arpa/inet.h>
@@ -38,17 +40,15 @@ Master::Master(Logger* logger) : Peer(logger), sync_port_(0) {}
 void Master::set_port(uint16_t port) { sync_port_ = port; }
 
 uint16_t Master::Listen() {
-  InitUpdateConnectionSocket(&update_sock_);
+  update_sock_ = UpdateProtocol::InitSocket();
   update_port_ = BindAndListen(update_sock_, 0);
-  InitSyncConnectionSocket(&sync_sock_);
+  sync_sock_ = SyncProtocol::InitSocket();
   return BindAndListen(sync_sock_, sync_port_);
 }
 
-void Master::CreateConnections(FD* download_fd, FD* upload_fd) {}
-
-void Master::InitUpdateConnection(int sync_fd, FD* update_fd) {
+void Master::InitUpdateConnection(uint16_t update_port, FD* update_fd) {
   if (update_sock_.closed())
-    return ;
+    logger_->Fatal("Cannot connect to multiple slaves");
 
   // close update_sock_ on exit (even in case of exception)
   auto on_exit = [=] { update_sock_.Close(); };
@@ -58,22 +58,14 @@ void Master::InitUpdateConnection(int sync_fd, FD* update_fd) {
     decltype(on_exit) f;
   } scope_exit(on_exit);
 
-  InitUpdateConnectionSocket(update_fd);
   *update_fd = Accept(update_sock_);
 }
 
-void Master::InitDownloadConnection(FD* fd) {
-  *fd = Accept(sync_sock_);
-}
+void Master::InitSyncConnection(FD* sync_fd, uint16_t* update_port) {
+  *sync_fd = Accept(sync_sock_);
 
-void Master::InitUploadConnection(FD* fd) {
-  *fd = Accept(sync_sock_);
-
-  // send the bound port for update
+  // send the bound update port
   uint16_t port = htonl(update_port_);
-  sys_call(write, *fd, &port, sizeof(port));
-}
-
-void Master::Download(const ExifHash& hash, FD* fd) {
-  // TODO
+  if (!SyncProtocol::WriteExactly(*sync_fd, &port, sizeof(port)))
+    logger_->Fatal("Failed to send update port to slave");
 }

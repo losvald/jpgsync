@@ -402,16 +402,17 @@ int main(int argc, char** argv) {
       cout << "Listening on port " << master->Listen() << endl;
       peer = master;
     } else {
-      peer = new Slave(gPO.master_host(), gPO.master_port(), &logger);
+      auto slave = new Slave(&logger);
+      slave->Attach(gPO.master_host(), gPO.master_port());
+      peer = slave;
     }
 
     // synchronize images
     peer->Sync(path_gen);
   } catch (const SysCallException& e) {
-    CERR << "fatal: " << e.what() << endl;
-    exit_status = 1;
+    logger.Fatal(e.what());
   }
   delete peer;
 
-  return exit_status;
+  return logger.exit_status();
 }

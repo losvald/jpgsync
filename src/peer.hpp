@@ -3,8 +3,10 @@
 
 #include "util/fd.hpp"
 
-#include <condition_variable>
+#include <cstdint>
+
 #include <functional>
+#include <iosfwd>
 #include <string>
 
 #define SYNC_PROTO SOCK_STREAM
@@ -26,16 +28,13 @@ class Peer {
   typedef std::function<const char*(void)> PathGenerator;
 
   Peer(Logger* logger);
+  virtual ~Peer();
   void Sync(PathGenerator path_gen);
 
  protected:
-  virtual void CreateConnections(FD* download_fd, FD* upload_fd) = 0;
-  virtual void InitUpdateConnectionSocket(FD* fd);
-  virtual void InitUpdateConnection(int sync_fd, FD* fd) = 0;
-  virtual void InitSyncConnectionSocket(FD* fd);
-  virtual void InitDownloadConnection(FD* fd) = 0;
-  virtual void InitUploadConnection(FD* fd) = 0;
-  virtual void Download(const ExifHash& hash, FD* fd) = 0;
+  virtual void InitUpdateConnection(uint16_t update_port, FD* update_fd) = 0;
+  virtual void InitSyncConnection(FD* sync_fd, uint16_t* update_port) = 0;
+  virtual void Download(FD* fd, std::ofstream* ofs);
   // void Upload();
 
   Logger* logger_;

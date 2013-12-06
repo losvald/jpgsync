@@ -7,18 +7,19 @@
 
 #include <string>
 
+class AddrInfo;
+
 class Slave : public Peer {
  public:
-  Slave(const std::string& master_host, uint16_t master_port, Logger* logger);
+  Slave(Logger* logger);
+  ~Slave();
+  void Attach(const std::string& master_host, uint16_t master_port);
  protected:
-  void CreateConnections(FD* download_fd, FD* upload_fd);
-  void InitUpdateConnection(int sync_fd, FD* update_fd);
-  void InitDownloadConnection(FD* fd);
-  void InitUploadConnection(FD* fd);
-  void Download(const ExifHash& hash, FD* fd);
+  void InitUpdateConnection(uint16_t update_port, FD* update_fd);
+  void InitSyncConnection(FD* sync_fd, uint16_t* update_port);
  private:
-  std::string master_host_;
-  uint16_t master_port_;
+  AddrInfo* update_addr_info_;
+  AddrInfo* sync_addr_info_;
 };
 
 #endif // SLAVE_HPP_

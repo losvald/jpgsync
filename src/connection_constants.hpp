@@ -47,6 +47,22 @@ struct ConnectionConstants {
     return WriteFully(fd, buf, count) == count;
   }
 
+  template<typename T>
+  static bool ReadByte(int fd, T* integral) {
+    unsigned char byte;
+    bool ret = ReadByte<unsigned char>(fd, &byte);
+    *integral = byte;
+    return ret;
+  }
+
+  template<typename T>
+  static inline bool WriteByte(int fd, T integral) {
+    unsigned char byte = integral;
+    ssize_t write_count;
+    sys_call_rv(write_count, write, fd, &byte, 1);
+    return write_count;
+  }
+
   static int protocol;
   static size_t hashes_per_packet;
 
@@ -67,6 +83,16 @@ template<> inline size_t ConnectionConstants<IPPROTO_DCCP>::WriteFully(
   sys_call_rv(ret, write, fd, bytes, count);
   return ret;
 }
+
+template<>
+template<>
+inline bool ConnectionConstants<SOCK_STREAM>::ReadByte<unsigned char>(
+    int fd, unsigned char* byte) {
+  ssize_t read_count;
+  sys_call_rv(read_count, read, fd, byte, 1);
+  return read_count;
+}
+
 
 extern template int ConnectionConstants<SOCK_DCCP>::protocol;
 extern template size_t ConnectionConstants<SOCK_DCCP>::hashes_per_packet;
