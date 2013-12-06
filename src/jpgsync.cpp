@@ -1,5 +1,6 @@
 #include "master.hpp"
 #include "slave.hpp"
+#include "util/dir.hpp"
 #include "util/fd.hpp"
 #include "util/logger.hpp"
 #include "util/program_options.hpp"
@@ -389,19 +390,28 @@ int main(int argc, char** argv) {
 
   Logger logger(PROG, gPO.verbosity());
 
+  Peer* peer = NULL;
   try {
+    // create a path generator for files in the root directory
+    Dir dir(gPO.master.count() ? gPO.master_root().dir : gPO.slave_root().dir);
+    auto path_gen = [&] { return dir.Next().c_str(); };
+
+    // create the corresponding peer (master / slave)
     if (gPO.master.count()) {
-      Master master(&logger);
-      cout << "Listening on port " << master.Listen() << endl;
-      master.Sync(gPO.master_root().dir);
+      auto master = new Master(&logger);
+      cout << "Listening on port " << master->Listen() << endl;
+      peer = master;
     } else {
-      Slave slave(gPO.master_host(), gPO.master_port(), &logger);
-      slave.Sync(gPO.slave_root().dir);
+      peer = new Slave(gPO.master_host(), gPO.master_port(), &logger);
     }
+
+    // synchronize images
+    peer->Sync(path_gen);
   } catch (const SysCallException& e) {
     CERR << "fatal: " << e.what() << endl;
     exit_status = 1;
   }
+  delete peer;
 
   return exit_status;
 }

@@ -9,17 +9,12 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-namespace {
-
-const size_t kIPMss = 576 - 20;
-
-} // namespace
-
 template<int type>
 struct ConnectionConstants {
-  static inline int InitSocket(int fd) {
+  static inline int InitSocket() {
+    int fd;
     sys_call_rv(fd, socket, AF_INET, type, protocol);
-    return protocol;
+    return fd;
   }
 
   static size_t ReadFully(int fd, void* buf, size_t count) {
@@ -44,6 +39,14 @@ struct ConnectionConstants {
       } while (true);
   }
 
+  static inline bool ReadExactly(int fd, void* buf, size_t count) {
+    return ReadFully(fd, buf, count) == count;
+  }
+
+  static inline bool WriteExactly(int fd, const void* buf, size_t count) {
+    return WriteFully(fd, buf, count) == count;
+  }
+
   static int protocol;
   static size_t hashes_per_packet;
 
@@ -65,12 +68,10 @@ template<> inline size_t ConnectionConstants<IPPROTO_DCCP>::WriteFully(
   return ret;
 }
 
-template<> int ConnectionConstants<SOCK_DGRAM>::protocol = IPPROTO_DCCP;
-template<> size_t ConnectionConstants<SOCK_DGRAM>::hashes_per_packet =
-    (kIPMss - 16) / sizeof(ExifHash);
+extern template int ConnectionConstants<SOCK_DCCP>::protocol;
+extern template size_t ConnectionConstants<SOCK_DCCP>::hashes_per_packet;
 
-template<> int ConnectionConstants<SOCK_STREAM>::protocol = IPPROTO_TCP;
-template<> size_t ConnectionConstants<SOCK_STREAM>::hashes_per_packet =
-    (kIPMss - 20) / sizeof(ExifHash);
+extern template int ConnectionConstants<SOCK_STREAM>::protocol;
+extern template size_t ConnectionConstants<SOCK_STREAM>::hashes_per_packet;
 
 #endif // CONNECTION_CONSTANTS_HPP_

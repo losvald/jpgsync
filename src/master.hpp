@@ -13,9 +13,11 @@ class Master : public Peer {
   uint16_t Listen();
   void set_port(uint16_t port);
  protected:
+  void CreateConnections(FD* download_fd, FD* upload_fd);
   void InitUpdateConnection(int sync_fd, FD* update_fd);
-  void InitDownloadConnection();
-  void InitUploadConnection();
+  void InitDownloadConnection(FD* fd);
+  void InitUploadConnection(FD* fd);
+  void Download(const ExifHash& hash, FD* fd);
  private:
   uint16_t update_port_;
   uint16_t sync_port_;

@@ -44,6 +44,8 @@ uint16_t Master::Listen() {
   return BindAndListen(sync_sock_, sync_port_);
 }
 
+void Master::CreateConnections(FD* download_fd, FD* upload_fd) {}
+
 void Master::InitUpdateConnection(int sync_fd, FD* update_fd) {
   if (update_sock_.closed())
     return ;
@@ -60,14 +62,18 @@ void Master::InitUpdateConnection(int sync_fd, FD* update_fd) {
   *update_fd = Accept(update_sock_);
 }
 
-void Master::InitDownloadConnection() {
-  download_fd_ = Accept(sync_sock_);
+void Master::InitDownloadConnection(FD* fd) {
+  *fd = Accept(sync_sock_);
 }
 
-void Master::InitUploadConnection() {
-  upload_fd_ = Accept(sync_sock_);
+void Master::InitUploadConnection(FD* fd) {
+  *fd = Accept(sync_sock_);
 
   // send the bound port for update
   uint16_t port = htonl(update_port_);
-  sys_call(write, upload_fd_, &port, sizeof(port));
+  sys_call(write, *fd, &port, sizeof(port));
+}
+
+void Master::Download(const ExifHash& hash, FD* fd) {
+  // TODO
 }

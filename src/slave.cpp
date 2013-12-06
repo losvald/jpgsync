@@ -1,5 +1,6 @@
 #include "slave.hpp"
 
+#include "connection_constants.hpp"
 #include "util/logger.hpp"
 #include "util/string_utils.hpp"
 #include "util/syscall.hpp"
@@ -77,27 +78,33 @@ Slave::Slave(const std::string& master_host, uint16_t master_port,
       master_host_(master_host),
       master_port_(master_port) {}
 
-void Slave::InitDownloadConnection() {}
-void Slave::InitUploadConnection() {}
+void Slave::CreateConnections(FD* download_fd, FD* upload_fd) {
+  *download_fd = ConnectionConstants<SYNC_PROTO>::InitSocket();
+  if (!Connect(master_host_, master_port_, ConnectionConstants<SYNC_PROTO>::
+               protocol, download_fd)) {
+    logger_->Error("Failed to establish download connection to master");
+  }
+
+  *upload_fd = ConnectionConstants<SYNC_PROTO>::InitSocket();
+  if (!Connect(master_host_, master_port_, ConnectionConstants<SYNC_PROTO>::
+               protocol, upload_fd)) {
+    logger_->Error("Failed to establish upload connection to master");
+  }
+}
+
+void Slave::InitDownloadConnection(FD* fd) {}
+void Slave::InitUploadConnection(FD* fd) {}
 
 void Slave::InitUpdateConnection(int sync_fd, FD* update_fd) {
   uint16_t port;
   sys_call(read, sync_fd, &port, sizeof(port));
   port = ntohl(port);
-  if (!Connect(master_host_, port, IPPROTO_DCCP, update_fd)) {
+  if (!Connect(master_host_, port, ConnectionConstants<UPDATE_PROTO>::protocol,
+               update_fd)) {
     logger_->Error("Failed to establish update connection to master");
   }
 }
 
-void Slave::Sync(const std::string& root) {
-  if (!Connect(master_host_, master_port_, IPPROTO_TCP,
-               &download_fd_)) {
-    logger_->Error("Failed to establish download connection to master");
-  }
-
-  if (!Connect(master_host_, master_port_, IPPROTO_TCP, &upload_fd_)) {
-    logger_->Error("Failed to establish upload connection to master");
-  }
-
-  Peer::Sync(root);
+void Slave::Download(const ExifHash& hash, FD* fd) {
+  // TODO
 }
