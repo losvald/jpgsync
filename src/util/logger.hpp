@@ -16,12 +16,14 @@ class Logger {
   void Fatal(const std::string& msg);
 
   unsigned verbosity() const;
+  int exit_status() const;
  protected:
   void Write(const std::string& tag, const std::string& msg);
  private:
   std::string name_;
   unsigned verbosity_;
   std::ostream* os_;
+  int exit_status_;
 };
 
 #endif  // UTIL_LOGGER_HPP_
