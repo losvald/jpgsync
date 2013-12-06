@@ -1,6 +1,8 @@
 #include "slave.hpp"
 
 #include "debug.hpp"
+#include "protocol.hpp"
+#include "util/fd.hpp"
 #include "util/logger.hpp"
 #include "util/string_utils.hpp"
 #include "util/syscall.hpp"
@@ -12,6 +14,7 @@
 #include <sys/socket.h>
 
 #include <exception>
+#include <string>
 
 class AddrInfo {
  public:

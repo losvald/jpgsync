@@ -1,9 +1,9 @@
 #include "peer.hpp"
 
-#include "connection_constants.hpp"
 #include "debug.hpp"
 #include "exif_hash.hpp"
 #include "exif_hasher.hpp"
+#include "protocol.hpp"
 #include "util/fd.hpp"
 #include "util/logger.hpp"
 #include "util/string_utils.hpp"
@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <fstream>
+#include <string>
 #include <thread>
 #include <unordered_set>
 #include <vector>
@@ -26,6 +27,7 @@ bool Reopen(const char* filename, Stream* stream) {
 }
 
 } // namespace
+
 
 Peer::Peer(Logger* logger) : logger_(logger) {}
 Peer::~Peer() {}

@@ -1,6 +1,6 @@
 #include "master.hpp"
 
-#include "connection_constants.hpp"
+#include "protocol.hpp"
 #include "util/logger.hpp"
 #include "util/syscall.hpp"
 

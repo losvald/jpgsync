@@ -7,18 +7,6 @@
 
 #include <functional>
 #include <iosfwd>
-#include <string>
-
-#define SYNC_PROTO SOCK_STREAM
-
-#ifndef RELIABLE_UPDATE
-#define UPDATE_PROTO SOCK_DCCP
-#else
-#define UPDATE_PROTO SYNC_PROTO
-#endif
-
-#define UpdateProtocol ConnectionConstants<UPDATE_PROTO>
-#define SyncProtocol ConnectionConstants<SYNC_PROTO>
 
 class ExifHash;
 class Logger;
