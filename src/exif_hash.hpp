@@ -1,24 +1,11 @@
 #ifndef EXIF_HASH_HPP_
 #define EXIF_HASH_HPP_
 
-#include <arpa/inet.h>
+#include <cstdint>
 
 #include <iomanip>
-#include <iostream>
+#include <iosfwd>
 #include <utility>
-
-namespace {
-
-inline uint32_t BytesToWord32(const unsigned char* bytes) {
-  return (bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3];
-}
-
-inline std::ostream& PrintWord32(uint32_t word, std::ostream& os) {
-  os << std::hex << std::setw(8) << word;
-  return os;
-}
-
-} // namespace
 
 struct ExifHash {
  public:
