@@ -6,16 +6,21 @@ if [[ "$1" == "-v" ]]; then
     shift
 fi
 if [[ $# -lt 2 ]]; then
-    echo "Usage: $0 [-v] <ip> <program> [<arg> ...]" >&2
+    echo "Usage: $0 [-v] [-i <if> ...] <ip> <program> [<arg> ...]" >&2
     exit 1
 fi
+while [[ "$1" == "-i" ]]; do
+    ifaces="$ifaces -i $2"
+    shift 2
+done
 ip=$1
 shift
-
-if [[ $ip == "localhost" || $ip == "127.0.0.1" ]]; then
-    ifaces="-i lo"
-else
-    ifaces="-i eth0 -i wlan0"
+if [[ -z "$ifaces" ]]; then
+    if [[ $ip == "localhost" || $ip == "127.0.0.1" ]]; then
+	ifaces="-i lo"
+    else
+	ifaces="-i $(netstat -ie | grep -B1 $(hostname -I) | head -n1 | awk '{print $1}')"
+    fi
 fi
 
 run() {
@@ -38,6 +43,8 @@ out=$(mktemp --suffix .ipdata.$ip)
 tshark_cmd="tshark $ifaces -q -z conv,ip host $ip > '$out' 2>/dev/null &"
 run $tshark_cmd
 tshark_pid=$(pgrep -n tshark)
+# wait until it starts capturing
+sleep 1 # XXX assume it will capture within a second
 
 # run program and dump time stats to stdout in a single line,
 # redirecting program's stderr to stdout along with time stats
