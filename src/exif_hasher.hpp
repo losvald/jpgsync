@@ -27,6 +27,8 @@ class ExifHasher {
            std::function<const char*(void)> path_gen);
   const Entry* Get(size_t* count);
 
+  const Entry* before_first_entry() const;
+
  protected:
   virtual bool HashExif(const std::string& path,
                         unsigned char* sha1_hash) const;

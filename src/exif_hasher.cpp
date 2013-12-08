@@ -135,3 +135,7 @@ const ExifHasher::Entry* ExifHasher::Get(size_t* count) {
     new_entry_ = new_entry_->next;
   return begin;
 }
+
+const ExifHasher::Entry* ExifHasher::before_first_entry() const {
+  return &dummy_entry_;
+}

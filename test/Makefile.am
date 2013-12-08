@@ -1,6 +1,7 @@
 AM_CXXFLAGS = -std=c++0x -Wall
 bin_PROGRAMS = unittest_all \
-	exifprint exifprint-mmap sha1print dir_test exif_hasher_test
+	exifprint exifprint-mmap sha1print dir_test exif_hasher_test \
+	fstream_utils_test
 
 exifprint_SOURCES = exifprint.cpp
 exifprint_LDADD = -lexiv2
@@ -16,6 +17,8 @@ exif_hasher_test_SOURCES = exif_hasher_test.cpp ../src/exif_hasher.cpp \
 	../src/exif_hash.cpp ../src/util/fd.cpp ../src/util/syscall.cpp
 exif_hasher_test_LDADD = -lcrypto -lexiv2
 exif_hasher_test_LDFLAGS = -pthread
+
+fstream_utils_test_SOURCES = fstream_utils_test.cpp
 
 unittest_all_SOURCES = test.cpp \
 	exif_hash_unittest.cpp ../src/exif_hash.cpp \
