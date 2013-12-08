@@ -245,7 +245,7 @@ void Peer::Sync(PathGenerator path_gen) {
       ssize_t read_count;
       sys_call_rv(read_count, read, upload_fd, &byte, 1);
       if (!read_count) {
-        logger_->Error("update failed: no response from update sender");
+        logger_->Fatal("update failed: no response from update sender");
       }
 
       // mark the end of update

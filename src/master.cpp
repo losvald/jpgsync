@@ -1,5 +1,6 @@
 #include "master.hpp"
 
+#include "debug.hpp"
 #include "protocol.hpp"
 #include "util/logger.hpp"
 #include "util/syscall.hpp"
@@ -42,6 +43,7 @@ void Master::set_port(uint16_t port) { sync_port_ = port; }
 uint16_t Master::Listen() {
   update_sock_ = UpdateProtocol::InitSocket();
   update_port_ = BindAndListen(update_sock_, 0);
+  logger_->Verbose("Listening for update on port " + ToString(update_port_));
   sync_sock_ = SyncProtocol::InitSocket();
   return BindAndListen(sync_sock_, sync_port_);
 }
@@ -58,14 +60,18 @@ void Master::InitUpdateConnection(uint16_t update_port, FD* update_fd) {
     decltype(on_exit) f;
   } scope_exit(on_exit);
 
+  DEBUG_OUT_LN(INITUPD, "ACCEPTING UPDATE CONN");
   *update_fd = Accept(update_sock_);
+  DEBUG_OUT_LN(INITUPD, "ACCEPTED UPDATE CONN");
 }
 
 void Master::InitSyncConnection(FD* sync_fd, uint16_t* update_port) {
+  DEBUG_OUT_LN(INITSYNC, "ACCEPTING SYNC CONN");
   *sync_fd = Accept(sync_sock_);
+  DEBUG_OUT_LN(INITSYNC, "ACCEPTED SYNC CONN");
 
   // send the bound update port
-  uint16_t port = htonl(update_port_);
+  uint16_t port = htons(update_port_);
   if (!SyncProtocol::WriteExactly(*sync_fd, &port, sizeof(port)))
     logger_->Fatal("Failed to send update port to slave");
 }
