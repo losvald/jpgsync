@@ -3,6 +3,7 @@
 #include "debug.hpp"
 #include "protocol.hpp"
 #include "util/logger.hpp"
+#include "util/string_utils.hpp"
 #include "util/syscall.hpp"
 
 #include <arpa/inet.h>
@@ -48,7 +49,7 @@ uint16_t Master::Listen() {
   return BindAndListen(sync_sock_, sync_port_);
 }
 
-void Master::InitUpdateConnection(uint16_t update_port, FD* update_fd) {
+void Master::InitUpdateConnection(FD* update_fd) {
   if (update_sock_.closed())
     logger_->Fatal("Cannot connect to multiple slaves");
 

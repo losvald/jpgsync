@@ -13,7 +13,7 @@ class Master : public Peer {
   uint16_t Listen();
   void set_port(uint16_t port);
  protected:
-  void InitUpdateConnection(uint16_t update_port, FD* update_fd);
+  void InitUpdateConnection(FD* update_fd);
   void InitSyncConnection(FD* sync_fd, uint16_t* update_port);
  private:
   uint16_t update_port_;

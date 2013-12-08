@@ -93,7 +93,7 @@ void Slave::Attach(const std::string& master_host, uint16_t master_port) {
       Resolve(master_port);
 }
 
-void Slave::InitUpdateConnection(uint16_t update_port, FD* update_fd) {
+void Slave::InitUpdateConnection(FD* update_fd) {
   logger_->Verbose("Connecting to master at update port: " +
                    ToString(update_addr_info_->port()));
   DEBUG_OUT_LN(INITUPD, "CONNECTING");

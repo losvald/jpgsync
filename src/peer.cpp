@@ -49,16 +49,20 @@ void Peer::Sync(PathGenerator path_gen) {
   std::atomic_flag hashing; hashing.test_and_set(); // set to true
 
   uint16_t update_port = 0;
-  std::atomic_flag update_init = ATOMIC_FLAG_INIT;
+  std::mutex init_update_mutex;
+  FD update_fd;
+  auto update_initializer = [&] {
+    std::lock_guard<std::mutex> locker(init_update_mutex);
+    if (update_fd.closed())
+      InitUpdateConnection(&update_fd);
+  };
 
   std::thread downloader([&] {
       FD download_fd;
       InitSyncConnection(&download_fd, &update_port);
 
       std::thread update_sender([&] {
-          FD update_fd;
-          if (!update_init.test_and_set())
-            InitUpdateConnection(update_port, &update_fd);
+          update_initializer();
 
           unsigned char buf[UpdateProtocol::
                             hashes_per_packet * sizeof(ExifHash)];
@@ -216,9 +220,7 @@ void Peer::Sync(PathGenerator path_gen) {
 
       std::unordered_set<ExifHash> received_hashes;
       std::thread update_receiver([&] {
-          FD update_fd;
-          if (!update_init.test_and_set())
-            InitUpdateConnection(update_port, &update_fd);
+          update_initializer();
 
           unsigned char buf[UpdateProtocol::
                             hashes_per_packet * sizeof(ExifHash)];

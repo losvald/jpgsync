@@ -20,7 +20,7 @@ class Peer {
   void Sync(PathGenerator path_gen);
 
  protected:
-  virtual void InitUpdateConnection(uint16_t update_port, FD* update_fd) = 0;
+  virtual void InitUpdateConnection(FD* update_fd) = 0;
   virtual void InitSyncConnection(FD* sync_fd, uint16_t* update_port) = 0;
   void Download(FD* fd, size_t file_size, std::ofstream* ofs);
   void Upload(size_t file_size, std::ifstream* ifs, FD* fd);
