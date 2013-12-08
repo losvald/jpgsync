@@ -1,6 +1,7 @@
 #include "../src/exif_hasher.hpp"
 
 #include <cstring>
+#include <iostream>
 #include <fstream>
 
 struct PathIterator {

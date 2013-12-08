@@ -5,9 +5,9 @@
 
 #include <condition_variable>
 #include <functional>
-#include <iostream>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 
 class ExifHasher {
  public:
@@ -26,6 +26,7 @@ class ExifHasher {
   void Run(size_t progress_threshold,
            std::function<const char*(void)> path_gen);
   const Entry* Get(size_t* count);
+  bool Contains(const ExifHash& hash) const;
 
   const Entry* before_first_entry() const;
 
@@ -42,6 +43,8 @@ class ExifHasher {
   std::condition_variable new_entries_;
   size_t new_entry_count_;
   bool done_;
+
+  std::unordered_set<ExifHash> hashes_;
 };
 
 #endif // EXIF_HASHER_HPP_

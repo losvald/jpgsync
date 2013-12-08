@@ -11,7 +11,6 @@
 #include <sys/types.h>
 
 #include <thread>
-#include <unordered_set>
 #include <utility>
 
 ExifHasher::Entry::Entry() : next(NULL) {}
@@ -78,7 +77,6 @@ bool ExifHasher::HashExif(const std::string& path,
 void ExifHasher::Run(size_t progress_threshold,
                      std::function<const char*(void)> path_gen) {
   std::thread thr([this, path_gen, progress_threshold] {
-      std::unordered_set<ExifHash> hashes;
       unsigned char hash_buf[SHA_DIGEST_LENGTH];
       std::string path;
       DEBUG_OUT_LN(RUN, "BEGIN");
@@ -88,26 +86,26 @@ void ExifHasher::Run(size_t progress_threshold,
           continue;
 
         ExifHash h(hash_buf);
-        if (hashes.count(h)) {
+        if (hashes_.count(h)) {
           std::cerr << "Exif hash conflict in: " << path << std::endl;
           // TODO
           continue;
         }
 
-        tail_ = (tail_->next = new Entry(&*hashes.insert(h).first, path));
-        if (hashes.size() % progress_threshold == 0) {
+        tail_ = (tail_->next = new Entry(&*hashes_.insert(h).first, path));
+        if (hashes_.size() % progress_threshold == 0) {
           std::unique_lock<decltype(mutex_)> locker(mutex_);
           new_entry_count_ += progress_threshold;
           DEBUG_OUT_LN(RUN, "NOTIFY(%s)", DEBUG_STR(new_entry_count_));
           new_entries_.notify_one();
         }
-        DEBUG_OUT_LN(RUN, "sha1=%s; path=%s", DEBUG_STR(tail_->hash),
+        DEBUG_OUT_LN(RUN, "hash=%s; path=%s", DEBUG_STR(*tail_->hash),
                      path.c_str());
       }
 
       {
         std::unique_lock<decltype(mutex_)> locker(mutex_);
-        new_entry_count_ += hashes.size() % progress_threshold;
+        new_entry_count_ += hashes_.size() % progress_threshold;
         done_ = true;
         DEBUG_OUT_LN(RUN, "DONE");
         DEBUG_OUT_LN(RUN, "NOTIFY(%s)", DEBUG_STR(new_entry_count_));
@@ -134,6 +132,10 @@ const ExifHasher::Entry* ExifHasher::Get(size_t* count) {
   for (size_t i = 0; i < *count; ++i)
     new_entry_ = new_entry_->next;
   return begin;
+}
+
+bool ExifHasher::Contains(const ExifHash& hash) const {
+  return hashes_.count(hash);
 }
 
 const ExifHasher::Entry* ExifHasher::before_first_entry() const {

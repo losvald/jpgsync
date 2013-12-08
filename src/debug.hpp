@@ -16,9 +16,12 @@
 
 #include <cstdio>
 
+#include <iomanip>
+#include <sstream>
 #include <thread>
 
 #define DEBUG_STR(x) (ToString(x).c_str())
+#define DEBUG_HEX_STR(bytes, count) (ToHexString(bytes, count).c_str())
 
 #define _DEBUG_OUT(tag, format, ...)                              \
   fprintf(stderr, format, tag,                                    \
@@ -29,9 +32,19 @@
 #define DEBUG_OUT_FINISH(format, ...)                   \
   fprintf(stderr, format DEBUG_MSG_END, ##__VA_ARGS__)
 
+inline std::string ToHexString(const void* bytes, size_t count) {
+  std::ostringstream oss;
+  for (size_t i = 0; i < count; ++i) {
+    oss << "\\x" << std::hex << std::setfill('0') << std::setw(2);
+    oss << (((char*)bytes)[i] & 0xFF);
+  }
+  return oss.str();
+}
+
 #else
 
 #define DEBUG_STR(x) ""
+#define DEBUG_HEX_STR(bytes, count) ""
 
 #define _DEBUG_OUT(tag, format, ...)
 #define DEBUG_OUT_APPEND(key, format, ...)
