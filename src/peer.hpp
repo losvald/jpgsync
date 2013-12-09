@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <iosfwd>
+#include <string>
 
 class ExifHash;
 class Logger;
@@ -15,7 +16,7 @@ class Peer {
 
   Peer(Logger* logger);
   virtual ~Peer();
-  void Sync(PathGenerator path_gen);
+  void Sync(PathGenerator path_gen, const std::string& download_dir);
 
  protected:
   virtual void InitUpdateConnection(int* update_fd) = 0;

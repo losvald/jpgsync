@@ -389,11 +389,14 @@ int main(int argc, char** argv) {
   }
 
   Logger logger(PROG, gPO.verbosity());
+  const auto& root = (gPO.master.count() ?
+                      gPO.master_root().dir :
+                      gPO.slave_root().dir);
 
   Peer* peer = NULL;
   try {
     // create a path generator for files in the root directory
-    Dir dir(gPO.master.count() ? gPO.master_root().dir : gPO.slave_root().dir);
+    Dir dir(root);
     auto path_gen = [&] { return dir.Next().c_str(); };
 
     // create the corresponding peer (master / slave)
@@ -408,7 +411,7 @@ int main(int argc, char** argv) {
     }
 
     // synchronize images
-    peer->Sync(path_gen);
+    peer->Sync(path_gen, root);
   } catch (const SysCallException& e) {
     logger.Fatal(e.what());
   }

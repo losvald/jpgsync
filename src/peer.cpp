@@ -35,6 +35,12 @@ const char* ToFilename(const std::string& path) {
   return path.c_str() + (pos != std::string::npos) * (pos + 1);
 }
 
+inline std::string ToPath(const std::string& dir, const char* filename) {
+  return dir + '/' + filename;
+}
+
+const char* kDevNull = "/dev/null";
+
 } // namespace
 
 
@@ -50,7 +56,7 @@ bool Peer::InitSyncConnection(int* sync_fd, bool download) {
   return peer_download != download;
 }
 
-void Peer::Sync(PathGenerator path_gen) {
+void Peer::Sync(PathGenerator path_gen, const std::string& download_dir) {
   ExifHasher exif_hasher;
   exif_hasher.Run(UpdateProtocol::hashes_per_packet, path_gen);
 
@@ -106,7 +112,6 @@ void Peer::Sync(PathGenerator path_gen) {
         hasher_progress.notify_one();
 
         // advance e to the latest entry, filling buf along the way
-        logger_->Verbose("sending " + ToString(hash_count) + " hashes");
         ssize_t write_count = hash_count * sizeof(ExifHash);
         auto bytes = buf + write_count;
         auto e_first = e;
@@ -121,9 +126,10 @@ void Peer::Sync(PathGenerator path_gen) {
         DEBUG_OUT_LN(UPDSEND, "update=%s | SENDING",
                      DEBUG_HEX_STR(buf, write_count));
         UpdateProtocol::WriteFully(update_fd, buf, write_count);
-        if (logger_->verbosity() > 1) {
+        if (logger_->verbosity() >= 2) { // prune slow path
+          logger_->Verbose("sent " + ToString(hash_count) + " hashes", 2);
           for (auto e = e_first; hash_count--; e = e->next)
-            logger_->Verbose("sent hash:" + ToString(*e->hash), 2);
+            logger_->Verbose("sent hash: " + ToString(*e->hash), 3);
         }
       }
 
@@ -213,12 +219,15 @@ void Peer::Sync(PathGenerator path_gen) {
 
           // create file <filename> or <filename>-<sha1> (if former exists)
           FstreamCloseGuard<decltype(ofs)> ofs_closer(&ofs);
-          if (!ReopenEnd(filename, &ofs) &&
-              !ReopenEnd((filename + ("-" + ToString(hash))).c_str(), &ofs)) {
+          std::string path = ToPath(download_dir, filename);
+          if (!ReopenEnd(path.c_str(), &ofs) &&
+              !ReopenEnd((path += ("-" + ToString(hash))).c_str(), &ofs)) {
             logger_->Error("filename conflict resolution failed for " +
                            IMG_STR);
-            // proceed with download, not to confuse the uploader
-            ReopenEnd("/dev/null", &ofs);
+            // proceed with download without store, not to confuse the uploader
+            ReopenEnd(kDevNull, &ofs);
+          } else {
+            logger_->Verbose("downloading " + ToString(hash) + ": " + path);
           }
           ofs.seekp(0, ofs.beg);
 
@@ -248,6 +257,7 @@ void Peer::Sync(PathGenerator path_gen) {
 
       std::unordered_set<ExifHash> received_hashes;
       std::thread update_receiver([&] {
+          logger_->Verbose("receiving update ...", 2);
           while (true) {
             unsigned char buf[UpdateProtocol::
                               hashes_per_packet * sizeof(ExifHash)];
@@ -262,6 +272,10 @@ void Peer::Sync(PathGenerator path_gen) {
               logger_->Warn("update received invalid packet length: " +
                             ToString(read_count));
               continue;
+            }
+            if (logger_->verbosity() >= 2) { // prune slow path
+              logger_->Verbose("received update chunk of size " +
+                             ToString(read_count / sizeof(ExifHash)), 2);
             }
 
             std::unique_lock<std::mutex> locker(updated_mutex);
@@ -285,6 +299,7 @@ void Peer::Sync(PathGenerator path_gen) {
               } while (bytes != buf);
             }
           }
+          logger_->Verbose("stopped receiving hashes", 3);
           DEBUG_OUT_LN(UPDRECV, "DONE");
         });
       update_receiver.detach();
@@ -348,16 +363,16 @@ void Peer::Sync(PathGenerator path_gen) {
         DEBUG_OUT_LN(SYNCSEND, "missing=%lu; total=%lu | DETERMINE",
                      missing_entries.size(), (bytes - buf) / sizeof(ExifHash));
 
-        if (logger_->verbosity() > 1) {
-          logger_->Verbose("sending offer of size " +
-                           ToString(missing_entries.size()), 2);
-          for (const auto& hash : missing_entries)
-            logger_->Verbose("offering " + ToString(hash), 2);
-        }
-
         // if all of them confirmed by receiver (in update), nothing to offer
         if (missing_entries.empty())
           continue;
+
+        if (logger_->verbosity() > 1) {
+          logger_->Verbose("sending offer of size " +
+                           ToString(missing_entries.size()), 2);
+          for (auto e : missing_entries)
+            logger_->Verbose("offering " + ToString(*e->hash), 2);
+        }
 
         // send an offer to upload hash_count hashes
         size_t hash_count = missing_entries.size();
@@ -404,6 +419,8 @@ void Peer::Sync(PathGenerator path_gen) {
 
             // upload the file
             try {
+              logger_->Verbose("uploading " + ToString(*entry->hash) +
+                               ": " + entry->path);
               DEBUG_OUT_LN(SYNCSEND, "hash=%s; size=%lu; path=%s | UPLOADING",
                            DEBUG_STR(*entry->hash), file_size,
                            entry->path.c_str());
