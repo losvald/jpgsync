@@ -171,7 +171,7 @@ if __name__ == '__main__':
 			if not path:
 				continue
 			try:
-				output = subprocess.check_output(["sha1sum", path])
+				output = subprocess.check_output(["jpghash", path])
 				sha1_path[output.partition(' ')[0]] = path
 			except subprocess.CalledProcessError:
 				raise # TODO
