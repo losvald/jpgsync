@@ -13,8 +13,8 @@ class Master : public Peer {
   uint16_t Listen();
   void set_port(uint16_t port);
  protected:
-  void InitUpdateConnection(FD* update_fd);
-  void InitSyncConnection(FD* sync_fd, uint16_t* update_port);
+  void InitUpdateConnection(int* update_fd);
+  bool InitSyncConnection(int* sync_fd, bool download);
  private:
   uint16_t update_port_;
   uint16_t sync_port_;

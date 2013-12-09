@@ -6,6 +6,7 @@
 #include "protocol.hpp"
 #include "util/fd.hpp"
 #include "util/logger.hpp"
+#include "util/fd.hpp"
 #include "util/fstream_utils.hpp"
 #include "util/string_utils.hpp"
 #include "util/syscall.hpp"
@@ -16,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <climits>
@@ -39,6 +41,15 @@ const char* ToFilename(const std::string& path) {
 Peer::Peer(Logger* logger) : logger_(logger) {}
 Peer::~Peer() {}
 
+bool Peer::InitSyncConnection(int* sync_fd, bool download) {
+  if (!SyncProtocol::WriteByte(*sync_fd, download))
+    logger_->Fatal("Failed to send connection id to peer");
+  bool peer_download;
+  if (!SyncProtocol::ReadByte(*sync_fd, &peer_download))
+    logger_->Fatal("Failed to receive peer connection id");
+  return peer_download != download;
+}
+
 void Peer::Sync(PathGenerator path_gen) {
   ExifHasher exif_hasher;
   exif_hasher.Run(UpdateProtocol::hashes_per_packet, path_gen);
@@ -46,73 +57,92 @@ void Peer::Sync(PathGenerator path_gen) {
   std::mutex hasher_progress_mutex;
   std::condition_variable hasher_progress;
   std::atomic<size_t> hasher_entry_count(0);
-  std::atomic_flag hashing; hashing.test_and_set(); // set to true
+  bool hashing = true;
 
-  uint16_t update_port = 0;
   std::mutex init_update_mutex;
   FD update_fd;
   auto update_initializer = [&] {
     std::lock_guard<std::mutex> locker(init_update_mutex);
-    if (update_fd.closed())
-      InitUpdateConnection(&update_fd);
+    if (update_fd.closed()) {
+      int fd;
+      InitUpdateConnection(&fd);
+      update_fd = fd;
+    }
   };
 
+  // initialize connections in parallel
+  int download_fd, upload_fd;
+  std::thread sync_initializer([&] {
+      InitSyncConnection(&download_fd, true);
+      update_initializer();
+    });
+  bool matched = InitSyncConnection(&upload_fd, false);
+  update_initializer();
+
+  // ensure download_fd is connected to peer's upload_fd and vice-versa
+  sync_initializer.join();
+  if (!matched)
+    std::swap(download_fd, upload_fd);
+  DEBUG_OUT_LN(SYNC, "match=%d | INIT'D SYNC CONNECTIONS", (int)matched);
+
   std::thread downloader([&] {
-      FD download_fd;
-      InitSyncConnection(&download_fd, &update_port);
+      FD sync_fd = download_fd;
+      DEBUG_OUT_LN(SYNCRECV, "fd=%2d | INIT SYNC DONE", (int)sync_fd);
 
-      std::thread update_sender([&] {
-          update_initializer();
+      // send update
+      while (true) {
+        unsigned char buf[UpdateProtocol::
+                          hashes_per_packet * sizeof(ExifHash)];
 
-          unsigned char buf[UpdateProtocol::
-                            hashes_per_packet * sizeof(ExifHash)];
-          while (true) {
-            // wait for hasher progress, until next hash_count hashes are found
-            size_t hash_count = UpdateProtocol::hashes_per_packet;
-            auto e = exif_hasher.Get(&hash_count);
-            if (hash_count == 0)
-              break;
+        // wait for hasher progress, until next hash_count hashes are found
+        size_t hash_count = UpdateProtocol::hashes_per_packet;
+        auto e = exif_hasher.Get(&hash_count);
+        if (hash_count == 0)
+          break;
 
-            // notify the upload thread of the progress / newly found entries
-            DEBUG_OUT_LN(UPDSEND, "cnt=%2lu | NOTIFY PROGRESS", hash_count);
-            hasher_entry_count.fetch_add(hash_count);
-            hasher_progress.notify_one();
+        // notify the upload thread of the progress / newly found entries
+        DEBUG_OUT_LN(UPDSEND, "cnt=%2lu | NOTIFY PROGRESS", hash_count);
+        hasher_entry_count.fetch_add(hash_count);
+        hasher_progress.notify_one();
 
-            // advance e to the latest entry, filling buf along the way
-            logger_->Verbose("sending " + ToString(hash_count) + " hashes");
-            ssize_t write_count = hash_count * sizeof(ExifHash);
-            auto bytes = buf + write_count;
-            auto e_first = e;
-            do {
-              DEBUG_OUT_LN(UPDSEND, "hash=%s; path=%s | NEW ENTRY",
-                           DEBUG_STR(*e->hash), e->path.c_str());
-              e->hash->ToDigest(bytes -= sizeof(ExifHash));
-              e = e->next;
-            } while (bytes != buf);
+        // advance e to the latest entry, filling buf along the way
+        logger_->Verbose("sending " + ToString(hash_count) + " hashes");
+        ssize_t write_count = hash_count * sizeof(ExifHash);
+        auto bytes = buf + write_count;
+        auto e_first = e;
+        do {
+          DEBUG_OUT_LN(UPDSEND, "hash=%s; path=%s | NEW ENTRY",
+                       DEBUG_STR(*e->hash), e->path.c_str());
+          e->hash->ToDigest(bytes -= sizeof(ExifHash));
+          e = e->next;
+        } while (bytes != buf);
 
-            // send the new hashes to the receiver
-            DEBUG_OUT_LN(UPDSEND, "update=%s | SENDING",
-                         DEBUG_HEX_STR(buf, write_count));
-            UpdateProtocol::WriteFully(update_fd, buf, write_count);
-            if (logger_->verbosity() > 1) {
-              for (auto e = e_first; hash_count--; e = e->next)
-                logger_->Verbose("sent hash:" + ToString(*e->hash), 2);
-            }
-          }
+        // send the new hashes to the receive
+        DEBUG_OUT_LN(UPDSEND, "update=%s | SENDING",
+                     DEBUG_HEX_STR(buf, write_count));
+        UpdateProtocol::WriteFully(update_fd, buf, write_count);
+        if (logger_->verbosity() > 1) {
+          for (auto e = e_first; hash_count--; e = e->next)
+            logger_->Verbose("sent hash:" + ToString(*e->hash), 2);
+        }
+      }
 
-          // notify the upload thread that hashing is done
-          DEBUG_OUT_LN(UPDSEND, "NOTIFY DONE");
-          hashing.clear();
-          hasher_progress.notify_one();
-        });
+      logger_->Verbose("sent update of size " +
+                       ToString(exif_hasher.entry_count()));
 
-      // wait until all hashes are sent and notify the receiver
-      update_sender.join();
+      // notify the upload thread that hashing is done
+      DEBUG_OUT_LN(UPDSEND, "NOTIFY DONE");
+      {
+        std::unique_lock<std::mutex> locker(hasher_progress_mutex);
+        hashing = false;
+        hasher_progress.notify_one();
+      }
 
       // notify the receiver that all hashes have been sent
-      DEBUG_OUT_LN(SYNCRECV, "NOTIFY UPDATE SENT");
+      DEBUG_OUT_LN(SYNCRECV, "NOTIFYING UPDATE SENT");
       unsigned char byte;
-      SyncProtocol::WriteByte(download_fd, byte);
+      SyncProtocol::WriteByte(sync_fd, byte);
+      DEBUG_OUT_LN(SYNCRECV, "NOTIFIED UPDATE SENT");
 
       logger_->Verbose("started downloading");
       std::ofstream ofs;
@@ -123,14 +153,14 @@ void Peer::Sync(PathGenerator path_gen) {
           (SyncProtocol::hashes_per_packet + CHAR_BIT - 1) / CHAR_BIT];
 
       for (size_t hash_count; SyncProtocol::
-               ReadByte(download_fd, &hash_count); ) {
+               ReadByte(sync_fd, &hash_count); ) {
         if (hash_count > SyncProtocol::hashes_per_packet) {
           logger_->Fatal("sync received invalid offer hash count: " +
                          ToString(hash_count));
         }
 
         size_t read_count = hash_count * sizeof(ExifHash);
-        if (!SyncProtocol::ReadExactly(download_fd, buf, read_count)) {
+        if (!SyncProtocol::ReadExactly(sync_fd, buf, read_count)) {
           logger_->Fatal("sync received invalid offer packet length: " +
                          ToString(read_count));
         }
@@ -158,7 +188,7 @@ void Peer::Sync(PathGenerator path_gen) {
         }
         size_t found_bitmask_size = (hash_count + CHAR_BIT - 1) / CHAR_BIT;
         if (!SyncProtocol::WriteExactly(
-                download_fd, found_bitmask, found_bitmask_size)) {
+                sync_fd, found_bitmask, found_bitmask_size)) {
           logger_->Fatal("cannot send download confirmation");
         }
         DEBUG_OUT_LN(SYNCRECV, "bitmask=%s | SENDING FOUND BITMASK",
@@ -169,8 +199,8 @@ void Peer::Sync(PathGenerator path_gen) {
           // receive filename
           char filename[0xFF + 1];
           unsigned char filename_len;
-          if (!SyncProtocol::ReadByte(download_fd, &filename_len) ||
-              !SyncProtocol::ReadExactly(download_fd, filename, filename_len)){
+          if (!SyncProtocol::ReadByte(sync_fd, &filename_len) ||
+              !SyncProtocol::ReadExactly(sync_fd, filename, filename_len)){
             logger_->Fatal("failed to receive filename for " + ToString(hash));
           }
           filename[filename_len] = 0;
@@ -178,10 +208,8 @@ void Peer::Sync(PathGenerator path_gen) {
 
           // receive file size
           size_t file_size;
-          if (!SyncProtocol::ReadExactly(
-                  download_fd, &file_size, sizeof(file_size))) {
+          if (!SyncProtocol::ReadFileSize(sync_fd, &file_size))
             logger_->Fatal("failed to receive size of " + IMG_STR);
-          }
 
           // create file <filename> or <filename>-<sha1> (if former exists)
           FstreamCloseGuard<decltype(ofs)> ofs_closer(&ofs);
@@ -197,10 +225,10 @@ void Peer::Sync(PathGenerator path_gen) {
           // download the file
           try {
             DEBUG_OUT_LN(SYNCRECV, "hash=%s; size=%lu; name=%s | DOWNLOADING",
-                         DEBUG_STR(hash), file_size, filename);
-            Download(&download_fd, file_size, &ofs);
+                         DEBUG_STR(hash), (size_t)file_size, filename);
+            Download(sync_fd, file_size, &ofs);
             DEBUG_OUT_LN(SYNCRECV, "hash=%s; size=%lu; name=%s | DOWNLOADED",
-                         DEBUG_STR(hash), file_size, filename);
+                         DEBUG_STR(hash), (size_t)file_size, filename);
           } catch (const std::exception& e) {
             logger_->Verbose(e.what());
             logger_->Fatal("failed to download " + IMG_STR);
@@ -212,19 +240,17 @@ void Peer::Sync(PathGenerator path_gen) {
     });
 
   std::thread uploader([&] {
-      FD upload_fd;
-      InitSyncConnection(&upload_fd, &update_port);
+      FD sync_fd = upload_fd;
+      DEBUG_OUT_LN(SYNCSEND, "fd=%2d | INIT SYNC DONE", (int)sync_fd);
 
       bool updated = false;
       std::mutex updated_mutex;
 
       std::unordered_set<ExifHash> received_hashes;
       std::thread update_receiver([&] {
-          update_initializer();
-
-          unsigned char buf[UpdateProtocol::
-                            hashes_per_packet * sizeof(ExifHash)];
           while (true) {
+            unsigned char buf[UpdateProtocol::
+                              hashes_per_packet * sizeof(ExifHash)];
             ssize_t read_count = UpdateProtocol::
                 ReadFully(update_fd, buf, sizeof(buf));
             if (!read_count) {
@@ -239,7 +265,7 @@ void Peer::Sync(PathGenerator path_gen) {
             }
 
             std::unique_lock<std::mutex> locker(updated_mutex);
-            if (!updated)
+            if (updated)
               break;
 
             DEBUG_OUT_LN(UPDRECV, "update=%s | RECEIVED",
@@ -264,10 +290,10 @@ void Peer::Sync(PathGenerator path_gen) {
       update_receiver.detach();
 
       // wait until the sender notifies that it has sent all hashes
+      DEBUG_OUT_LN(SYNCSEND, "WAITING UNTIL UPDATE RECEIVED");
       char byte;
       ssize_t read_count;
-      sys_call_rv(read_count, read, upload_fd, &byte, 1);
-      if (!read_count) {
+      if (!SyncProtocol::ReadByte(sync_fd, &byte)) {
         logger_->Fatal("update failed: no response from update sender");
       }
 
@@ -277,6 +303,9 @@ void Peer::Sync(PathGenerator path_gen) {
         std::unique_lock<std::mutex> locker(updated_mutex);
         updated = true;
       }
+
+      logger_->Verbose("received update of size " +
+                       ToString(received_hashes.size()));
 
       logger_->Verbose("started uploading");
       std::ifstream ifs;
@@ -291,10 +320,10 @@ void Peer::Sync(PathGenerator path_gen) {
         // wait until new hasher entries are found or hashing is done
         size_t total_entry_count = hasher_entry_count.load();
         if (processed_entry_count == total_entry_count) {
-          if (!hashing.test_and_set())  // hasher is done
+          std::unique_lock<std::mutex> locker(hasher_progress_mutex);
+          if (!hashing) // hasher is done
             break;
           DEBUG_OUT_LN(SYNCSEND, "WAIT FOR HASHER");
-          std::unique_lock<std::mutex> locker(hasher_progress_mutex);
           hasher_progress.wait(locker);
           continue;
         }
@@ -334,8 +363,8 @@ void Peer::Sync(PathGenerator path_gen) {
         size_t hash_count = missing_entries.size();
         DEBUG_OUT_LN(SYNCSEND, "offer=%s | OFFERING",
                      DEBUG_HEX_STR(buf, hash_count * sizeof(ExifHash)));
-        if (!SyncProtocol::WriteByte(upload_fd, hash_count) ||
-            !SyncProtocol::WriteExactly(upload_fd, buf,
+        if (!SyncProtocol::WriteByte(sync_fd, hash_count) ||
+            !SyncProtocol::WriteExactly(sync_fd, buf,
                                         hash_count * sizeof(ExifHash))) {
           logger_->Fatal("failed to send upload offer of size: " +
                          ToString(hash_count));
@@ -343,8 +372,8 @@ void Peer::Sync(PathGenerator path_gen) {
 
         // receive negative acks (what receiver already has) in found_bitmask
         size_t found_bitmask_size = (hash_count + CHAR_BIT - 1) / CHAR_BIT;
-        if (!SyncProtocol::ReadExactly(
-                upload_fd, found_bitmask, found_bitmask_size)) {
+        if (!SyncProtocol::ReadExactly(sync_fd, found_bitmask,
+                                       found_bitmask_size)) {
           logger_->Fatal("failed to receive offer confirmation");
         }
         DEBUG_OUT_LN(SYNCSEND, "bitmask=%s | RECEIVED FOUND BITMASK",
@@ -356,8 +385,9 @@ void Peer::Sync(PathGenerator path_gen) {
 #define IMG_STR ToImageStr(*entry->hash, entry->path)
           if (!(*found & (1 << found_bit))) {
             const char* filename = ToFilename(entry->path);
-            if (!SyncProtocol::WriteExactly(
-                    upload_fd, filename, strlen(filename))) {
+            auto filename_len = static_cast<unsigned char>(strlen(filename));
+            if (!SyncProtocol::WriteByte(sync_fd, filename_len) ||
+                !SyncProtocol::WriteExactly(sync_fd, filename, filename_len)) {
               logger_->Fatal("failed to send filename of " + IMG_STR);
             }
 
@@ -367,8 +397,7 @@ void Peer::Sync(PathGenerator path_gen) {
               logger_->Fatal("failed to open " + IMG_STR);
             }
             size_t file_size = static_cast<size_t>(ifs.tellg());
-            if (!SyncProtocol::WriteExactly(
-                    upload_fd, &file_size, sizeof(file_size))) {
+            if (!SyncProtocol::WriteFileSize(sync_fd, file_size)) {
               logger_->Fatal("failed to send size of " + IMG_STR);
             }
             ifs.seekg(0, ifs.beg);
@@ -378,7 +407,7 @@ void Peer::Sync(PathGenerator path_gen) {
               DEBUG_OUT_LN(SYNCSEND, "hash=%s; size=%lu; path=%s | UPLOADING",
                            DEBUG_STR(*entry->hash), file_size,
                            entry->path.c_str());
-              Upload(file_size, &ifs, &upload_fd);
+              Upload(sync_fd, file_size, &ifs);
               DEBUG_OUT_LN(SYNCSEND, "hash=%s; size=%lu; path=%s | UPLOADED",
                            DEBUG_STR(*entry->hash), file_size,
                            entry->path.c_str());
@@ -399,16 +428,17 @@ void Peer::Sync(PathGenerator path_gen) {
   uploader.join();
 }
 
-void Peer::Download(FD* fd, size_t file_size, std::ofstream* ofs) {
+void Peer::Download(int sync_fd, size_t file_size, std::ofstream* ofs) {
   std::vector<char> file(file_size);
-  if (!SyncProtocol::ReadExactly(*fd, file.data(), file_size))
+  if (!SyncProtocol::ReadExactly(sync_fd, file.data(), file_size))
     throw std::runtime_error("failed to receive image");
   ofs->write(file.data(), file_size);
 }
 
-void Peer::Upload(size_t file_size, std::ifstream* ifs, FD* fd) {
+void Peer::Upload(int sync_fd, size_t file_size, std::ifstream* ifs) {
   std::vector<char> file(file_size);
   ifs->read(file.data(), file_size);
-  if (!SyncProtocol::WriteExactly(*fd, file.data(), file_size))
+  if (!SyncProtocol::WriteExactly(sync_fd, file.data(), file_size)) {
     throw std::runtime_error("failed to send image");
+  }
 }

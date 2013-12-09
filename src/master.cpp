@@ -49,7 +49,7 @@ uint16_t Master::Listen() {
   return BindAndListen(sync_sock_, sync_port_);
 }
 
-void Master::InitUpdateConnection(FD* update_fd) {
+void Master::InitUpdateConnection(int* update_fd) {
   if (update_sock_.closed())
     logger_->Fatal("Cannot connect to multiple slaves");
 
@@ -66,7 +66,7 @@ void Master::InitUpdateConnection(FD* update_fd) {
   DEBUG_OUT_LN(INITUPD, "ACCEPTED UPDATE CONN");
 }
 
-void Master::InitSyncConnection(FD* sync_fd, uint16_t* update_port) {
+bool Master::InitSyncConnection(int* sync_fd, bool download) {
   DEBUG_OUT_LN(INITSYNC, "ACCEPTING SYNC CONN");
   *sync_fd = Accept(sync_sock_);
   DEBUG_OUT_LN(INITSYNC, "ACCEPTED SYNC CONN");
@@ -75,4 +75,6 @@ void Master::InitSyncConnection(FD* sync_fd, uint16_t* update_port) {
   uint16_t port = htons(update_port_);
   if (!SyncProtocol::WriteExactly(*sync_fd, &port, sizeof(port)))
     logger_->Fatal("Failed to send update port to slave");
+
+  return Peer::InitSyncConnection(sync_fd, download);
 }

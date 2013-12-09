@@ -141,3 +141,5 @@ bool ExifHasher::Contains(const ExifHash& hash) const {
 const ExifHasher::Entry* ExifHasher::before_first_entry() const {
   return &dummy_entry_;
 }
+
+size_t ExifHasher::entry_count() const { return hashes_.size(); }

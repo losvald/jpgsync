@@ -29,6 +29,7 @@ class ExifHasher {
   bool Contains(const ExifHash& hash) const;
 
   const Entry* before_first_entry() const;
+  size_t entry_count() const;
 
  protected:
   virtual bool HashExif(const std::string& path,

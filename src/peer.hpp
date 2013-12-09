@@ -1,8 +1,6 @@
 #ifndef PEER_HPP_
 #define PEER_HPP_
 
-#include "util/fd.hpp"
-
 #include <cstdint>
 
 #include <functional>
@@ -20,10 +18,10 @@ class Peer {
   void Sync(PathGenerator path_gen);
 
  protected:
-  virtual void InitUpdateConnection(FD* update_fd) = 0;
-  virtual void InitSyncConnection(FD* sync_fd, uint16_t* update_port) = 0;
-  void Download(FD* fd, size_t file_size, std::ofstream* ofs);
-  void Upload(size_t file_size, std::ifstream* ifs, FD* fd);
+  virtual void InitUpdateConnection(int* update_fd) = 0;
+  virtual bool InitSyncConnection(int* sync_fd, bool download);
+  void Download(int sync_fd, size_t file_size, std::ofstream* ofs);
+  void Upload(int sync_fd, size_t file_size, std::ifstream* ifs);
 
   Logger* logger_;
 };

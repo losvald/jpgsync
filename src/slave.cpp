@@ -2,7 +2,6 @@
 
 #include "debug.hpp"
 #include "protocol.hpp"
-#include "util/fd.hpp"
 #include "util/logger.hpp"
 #include "util/string_utils.hpp"
 #include "util/syscall.hpp"
@@ -41,19 +40,19 @@ class AddrInfo {
     return *this;
   }
 
-  bool Connect(FD* fd) const {
+  bool Connect(int* fd) const {
     SysCallException* exception = NULL;
     for(auto ai = resolved_asi_begin_; ai != NULL; ai = ai->ai_next) {
       sys_call_rv(*fd, socket, ai->ai_family, ai->ai_socktype,
                   ai->ai_protocol);
-      DEBUG_OUT_LN(CONNECT, "fd = %d | TRYING", (int)*fd);
+      DEBUG_OUT_LN(CONNECT, "fd=%2d | TRYING", *fd);
 
       try {
         sys_call(connect, *fd, ai->ai_addr, ai->ai_addrlen);
-        DEBUG_OUT_LN(CONNECT, "fd = %d | SUCCEEDED", (int)*fd);
+        DEBUG_OUT_LN(CONNECT, "fd=%2d | SUCCEEDED", *fd);
         return true;
       } catch (const SysCallException& e) {
-        DEBUG_OUT_LN(CONNECT, "fd = %d | FAILED", (int)*fd);
+        DEBUG_OUT_LN(CONNECT, "fd=%2d | FAILED", *fd);
         exception = new SysCallException(e);
       }
     }
@@ -93,7 +92,7 @@ void Slave::Attach(const std::string& master_host, uint16_t master_port) {
       Resolve(master_port);
 }
 
-void Slave::InitUpdateConnection(FD* update_fd) {
+void Slave::InitUpdateConnection(int* update_fd) {
   logger_->Verbose("Connecting to master at update port: " +
                    ToString(update_addr_info_->port()));
   DEBUG_OUT_LN(INITUPD, "CONNECTING");
@@ -102,17 +101,27 @@ void Slave::InitUpdateConnection(FD* update_fd) {
   DEBUG_OUT_LN(INITUPD, "CONNECTED");
 }
 
-void Slave::InitSyncConnection(FD* sync_fd, uint16_t* update_port) {
+bool Slave::InitSyncConnection(int* sync_fd, bool download) {
   DEBUG_OUT_LN(INITSYNC, "CONNECTING");
   if (!sync_addr_info_->Connect(sync_fd))
     logger_->Fatal("Failed to establish sync connection to master");
-  DEBUG_OUT_LN(INITSYNC, "CONNECTED");
+#ifdef DEBUG
+  sockaddr_in sin;
+  socklen_t sin_len = sizeof(sin);
+  sys_call(getsockname, *sync_fd, (sockaddr*)&sin, &sin_len);
+  DEBUG_OUT_LN(INITSYNC, "fd=%2d; port=%5d | CONNECTED", (int)*sync_fd,
+               (int)ntohs(sin.sin_port));
+#endif
 
-  if (!SyncProtocol::ReadExactly(*sync_fd, update_port, sizeof(*update_port)))
+  uint16_t update_port;
+  if (!SyncProtocol::ReadExactly(*sync_fd, &update_port, sizeof(update_port)))
     logger_->Fatal("Failed to receive update port from master");
-  *update_port = ntohs(*update_port);
+  update_port = ntohs(update_port);
 
   DEBUG_OUT_LN(INITSYNC, "RESOLVING");
-  update_addr_info_->Resolve(*update_port);
+  update_addr_info_->Resolve(update_port);
   DEBUG_OUT_LN(INITSYNC, "RESOLVED");
+
+  Peer::InitSyncConnection(sync_fd, download);
+  return true; // master is responsible for resolving a mismatch
 }

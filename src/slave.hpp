@@ -15,8 +15,8 @@ class Slave : public Peer {
   ~Slave();
   void Attach(const std::string& master_host, uint16_t master_port);
  protected:
-  void InitUpdateConnection(FD* update_fd);
-  void InitSyncConnection(FD* sync_fd, uint16_t* update_port);
+  void InitUpdateConnection(int* update_fd);
+  bool InitSyncConnection(int* sync_fd, bool download);
  private:
   AddrInfo* update_addr_info_;
   AddrInfo* sync_addr_info_;

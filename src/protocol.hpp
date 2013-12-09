@@ -74,6 +74,18 @@ struct Protocol {
     return write_count;
   }
 
+  static inline bool ReadFileSize(int fd, size_t* file_size) {
+    uint32_t buf;
+    bool ret = ReadExactly(fd, &buf, sizeof(buf));
+    *file_size = static_cast<size_t>(ntohl(buf));
+    return ret;
+  }
+
+  static inline bool WriteFileSize(int fd, size_t file_size) {
+    uint32_t buf = htonl(static_cast<uint32_t>(file_size));
+    return WriteExactly(fd, &buf, sizeof(buf));
+  }
+
   static int protocol;
   static size_t hashes_per_packet;
 
