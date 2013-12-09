@@ -93,14 +93,14 @@ struct Protocol {
   Protocol() {}
 };
 
-template<> inline size_t Protocol<IPPROTO_DCCP>::ReadFully(
+template<> inline size_t Protocol<SOCK_DCCP>::ReadFully(
     int fd, void* bytes, size_t count) {
   ssize_t ret;
   sys_call_rv(ret, read, fd, bytes, count);
   return ret;
 }
 
-template<> inline size_t Protocol<IPPROTO_DCCP>::WriteFully(
+template<> inline size_t Protocol<SOCK_DCCP>::WriteFully(
     int fd, const void* bytes, size_t count) {
   ssize_t ret;
   sys_call_rv(ret, write, fd, bytes, count);
