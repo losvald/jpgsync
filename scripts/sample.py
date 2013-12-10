@@ -17,16 +17,17 @@ class Host(object):
 	@classmethod
 	def create(cls, directory, sha1_path):
 		remote, sep, dir_path = directory.partition(':')
-		if not sep:
+		if not sep or remote == "localhost":
+			if remote != "localhost":
+				dir_path = remote
+				remote = ""
 			host = Host()
-			host.__dict__.update(
-				dir_path=remote, remote="", sha1_path=sha1_path
-			)
 		else:
 			host = RemoteHost()
-			host.__dict__.update(
-				dir_path=dir_path, remote=remote, sha1_path=sha1_path
-			)
+		print [remote, sep, dir_path]
+		host.__dict__.update(
+			dir_path=dir_path, remote=remote, sha1_path=sha1_path
+		)
 		return host
 
 	@property
@@ -46,7 +47,7 @@ class Host(object):
 		return ["mkdir", "-p", self.dir_path]
 
 	def get_cp_cmd(self, sha1):
-		return ["cp", "-f", sha1_path[sha1], os.path.join(dir_path, sha1)]
+		return ["cp", "-f", sha1_path[sha1], os.path.join(self.dir_path, sha1)]
 
 	def get_rm_cmd(self, sha1):
 		return ["rm", "-f", os.path.join(self.dir_path, sha1)]
@@ -73,7 +74,7 @@ class RemoteHost(Host):
 
 	@property
 	def unison_root(self):
-		return "ssh://%s/%s" % (
+		return "rsh://%s/%s" % (
 			self.remote,
 			super(RemoteHost, self).unison_root
 		)
@@ -85,6 +86,7 @@ class RemoteHost(Host):
 	def get_cp_cmd(self, sha1):
 		cmd = super(RemoteHost, self).get_cp_cmd(sha1)
 		cmd[:-2] = ["scp"]
+		cmd[-1] = self.remote + ":" + cmd[-1]
 		return cmd
 
 	def get_rm_cmd(self, sha1):
@@ -225,6 +227,7 @@ if __name__ == '__main__':
 			roots.append(host.unison_root)
 			capture_ip = capture_ip or host.remote
 
+
 		if po.jpgsync or po.unison:
 			cmd = [
 				os.path.join(
@@ -238,7 +241,11 @@ if __name__ == '__main__':
 					po.unison_cmd, "-servercmd", po.unison_remote_cmd,
 					"-batch", "-ignorearchives",
 				]
+				# if no remote, make sure the first one is "rsh://localhost/*"
+				if all(map(lambda root: ":" not in root, roots)):
+					roots[0] = "rsh://localhost/" + roots[0]
+				print >> sys.stderr, 'roots=', roots
 			else:
-				raise NotImplementedError("jpgsync not implemented")
+				cmd += [po.jpgsync_cmd, "-v", "1", "-d"]
 			cmd += roots
 			execute_cmd(cmd, None, dev_null)
