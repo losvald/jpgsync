@@ -1,0 +1,13 @@
+== Dependencies ==
+- Exiv2 C++ library
+- OpenSSL C library
+- GNU automake
+
+== Compilation ==
+$ mkdir build; cd build
+$ ../configure
+$ make
+
+== Usage ==
+Please see the output of
+$ build/jpgsync --help
