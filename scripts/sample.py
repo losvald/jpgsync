@@ -24,7 +24,6 @@ class Host(object):
 			host = Host()
 		else:
 			host = RemoteHost()
-		print [remote, sep, dir_path]
 		host.__dict__.update(
 			dir_path=dir_path, remote=remote, sha1_path=sha1_path
 		)
@@ -51,6 +50,9 @@ class Host(object):
 
 	def get_rm_cmd(self, sha1):
 		return ["rm", "-f", os.path.join(self.dir_path, sha1)]
+
+	def get_ls_cmd(self):
+		return ["ls", "-w", "1", self.dir_path]
 
 	def get_sha1_basenames(self):
 		"""Generates files' basenames which are valid SHA1 hashes.
@@ -91,6 +93,9 @@ class RemoteHost(Host):
 
 	def get_rm_cmd(self, sha1):
 		return self.to_ssh_cmd(super(RemoteHost, self).get_rm_cmd(sha1))
+
+	def get_ls_cmd(self):
+		return self.to_ssh_cmd(super(RemoteHost, self).get_ls_cmd)
 
 	def get_sha1_basenames(self):
 		"""Generates files' basenames which are valid SHA1 hashes.
@@ -199,11 +204,15 @@ if __name__ == '__main__':
 			if not po.dry_run:
 				subprocess.check_call(args, stdout=stdout, stderr=stderr)
 
+		hosts = []
+		s_sha1s1, s_sha1s2 = sample(sha1_path.keys(), po.u, po.s, po.d)
+
 		for dir_path, s_sha1s in zip(
 			(po.dir1, po.dir2),
-			sample(sha1_path.keys(), po.u, po.s, po.d)
+			(s_sha1s1, s_sha1s2),
 		):
 			host = Host.create(dir_path, sha1_path)
+			hosts.append(host)
 
 			# create directory if it doesn't exist
 			execute_cmd(host.mkdir_cmd)
@@ -227,6 +236,16 @@ if __name__ == '__main__':
 			roots.append(host.unison_root)
 			capture_ip = capture_ip or host.remote
 
+		for host in hosts:
+			execute_cmd(host.get_ls_cmd(), stdout=sys.stderr)
+
+		# compute minimum required traffic (for sanity check later on)
+		sym_diff_sha1s = (s_sha1s1 - s_sha1s2) | (s_sha1s2 - s_sha1s1)
+		min_traffic = sum(os.path.getsize(sha1_path[s])
+						  for s in sym_diff_sha1s)
+
+		if po.dry_run:
+			sys.exit(0)
 
 		if po.jpgsync or po.unison:
 			cmd = [
@@ -240,12 +259,26 @@ if __name__ == '__main__':
 				cmd += [
 					po.unison_cmd, "-servercmd", po.unison_remote_cmd,
 					"-batch", "-ignorearchives",
+					"-terse", "-contactquietly",
 				]
 				# if no remote, make sure the first one is "rsh://localhost/*"
 				if all(map(lambda root: ":" not in root, roots)):
 					roots[0] = "rsh://localhost/" + roots[0]
-				print >> sys.stderr, 'roots=', roots
 			else:
-				cmd += [po.jpgsync_cmd, "-v", "1", "-d"]
+				cmd += [po.jpgsync_cmd,
+						#"-v", "1",
+						"-d"]
 			cmd += roots
 			execute_cmd(cmd, None, dev_null)
+
+			# verify all images are transferred
+			all_sha1s = set(s_sha1s1 | s_sha1s2)
+			for dir_path, host in zip((po.dir1, po.dir2), hosts):
+				assert set(host.get_sha1_basenames()) == all_sha1s
+				subprocess.check_call(
+					"bash -c \"diff -q <(ls " + dir_path + " | sort)"
+					" <(find " + dir_path + " -type f"
+					" | xargs jpghash | awk '{print \\$1}' | sort)\"",
+					shell=True)
+
+		print min_traffic
