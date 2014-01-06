@@ -43,7 +43,15 @@ bool ExifHasher::HashExif(const std::string& path,
   sys_call2_rv(NULL, memblock, mmap, NULL, stat_buf.st_size, PROT_READ,
                MAP_PRIVATE, fd, 0);
   auto bytes = static_cast<const unsigned char*>(memblock);
-  auto image = Exiv2::ImageFactory::open(bytes, stat_buf.st_size);
+
+  Exiv2::Image::AutoPtr image;
+  try {
+    image = Exiv2::ImageFactory::open(bytes, stat_buf.st_size);
+  } catch (const std::exception& e) {
+    std::cerr << "Error: " << e.what() << std::endl;
+    return false;
+  }
+
   if (image.get() != 0)
     image->readMetadata();
   else
@@ -71,12 +79,14 @@ bool ExifHasher::HashExif(const std::string& path,
   } else {
     std::cerr << "Warning: EXIF not found in: " << path << std::endl;
   }
+
   return false;
 }
 
 void ExifHasher::Run(size_t progress_threshold,
-                     std::function<const char*(void)> path_gen) {
-  std::thread thr([this, path_gen, progress_threshold] {
+                     std::function<const char*(void)> path_gen,
+                     bool unique) {
+  std::thread thr([this, path_gen, progress_threshold, unique] {
       unsigned char hash_buf[SHA_DIGEST_LENGTH];
       std::string path;
       DEBUG_OUT_LN(RUN, "BEGIN");
@@ -86,7 +96,7 @@ void ExifHasher::Run(size_t progress_threshold,
           continue;
 
         ExifHash h(hash_buf);
-        if (hashes_.count(h)) {
+        if (unique && hashes_.count(h)) {
           std::cerr << "Exif hash conflict in: " << path << std::endl;
           // TODO
           continue;

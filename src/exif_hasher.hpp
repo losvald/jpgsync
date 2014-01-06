@@ -24,7 +24,8 @@ class ExifHasher {
   virtual ~ExifHasher();
 
   void Run(size_t progress_threshold,
-           std::function<const char*(void)> path_gen);
+           std::function<const char*(void)> path_gen,
+           bool unique = true);
   const Entry* Get(size_t* count);
   bool Contains(const ExifHash& hash) const;
 
